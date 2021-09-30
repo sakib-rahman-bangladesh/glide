@@ -20,6 +20,7 @@ import com.bumptech.glide.manager.ConnectivityMonitor.ConnectivityListener;
 import com.bumptech.glide.util.GlideSuppliers;
 import com.bumptech.glide.util.GlideSuppliers.GlideSupplier;
 import com.bumptech.glide.util.Synthetic;
+import com.bumptech.glide.util.Util;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -136,15 +137,34 @@ final class SingletonConnectivityReceiver {
         new NetworkCallback() {
           @Override
           public void onAvailable(@NonNull Network network) {
-            onConnectivityChange(true);
+            postOnConnectivityChange(true);
           }
 
           @Override
           public void onLost(@NonNull Network network) {
-            onConnectivityChange(false);
+            postOnConnectivityChange(false);
           }
 
-          private void onConnectivityChange(boolean newState) {
+          private void postOnConnectivityChange(final boolean newState) {
+            // We could use registerDefaultNetworkCallback with a Handler, but that's only available
+            // on API 26, instead of API 24. We can mimic the same behavior here manually by
+            // posting to the UI thread. All calls have to be posted to make sure that we retain the
+            // original order. Otherwise a call on a background thread, followed by a call on the UI
+            // thread could result in the first call running second.
+            Util.postOnUiThread(
+                new Runnable() {
+                  @Override
+                  public void run() {
+                    onConnectivityChange(newState);
+                  }
+                });
+          }
+
+          @Synthetic
+          void onConnectivityChange(boolean newState) {
+            // See b/201425456.
+            Util.assertMainThread();
+
             boolean wasConnected = isConnected;
             isConnected = newState;
             if (wasConnected != newState) {
